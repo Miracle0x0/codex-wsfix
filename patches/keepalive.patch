@@ -1,0 +1,106 @@
+diff --git a/codex-rs/codex-api/src/endpoint/responses_websocket.rs b/codex-rs/codex-api/src/endpoint/responses_websocket.rs
+index 95d41e0..a930340 100644
+--- a/codex-rs/codex-api/src/endpoint/responses_websocket.rs
++++ b/codex-rs/codex-api/src/endpoint/responses_websocket.rs
+@@ -47,6 +47,10 @@ use tungstenite::extensions::compression::deflate::DeflateConfig;
+ use tungstenite::protocol::WebSocketConfig;
+ use url::Url;
+ 
++/// Interval between client-initiated WebSocket keepalive pings.
++/// Keeps quiet connections active through intermediaries with idle timeouts.
++const WEBSOCKET_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
++
+ struct WsStream {
+     tx_command: mpsc::Sender<WsCommand>,
+     rx_message: mpsc::UnboundedReceiver<Result<Message, WsError>>,
+@@ -61,12 +65,15 @@ enum WsCommand {
+ }
+ 
+ impl WsStream {
+-    fn new(inner: WebSocketConnection) -> Self {
++    fn new(inner: WebSocketConnection, keepalive_interval: Duration) -> Self {
+         let (tx_command, mut rx_command) = mpsc::channel::<WsCommand>(32);
+         let (tx_message, rx_message) = mpsc::unbounded_channel::<Result<Message, WsError>>();
+ 
+         let pump_task = tokio::spawn(async move {
+             let mut inner = inner;
++            let mut keepalive =
++                tokio::time::interval_at(Instant::now() + keepalive_interval, keepalive_interval);
++            keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+             loop {
+                 tokio::select! {
+                     command = rx_command.recv() => {
+@@ -114,6 +121,12 @@ impl WsStream {
+                             }
+                         }
+                     }
++                    _ = keepalive.tick() => {
++                        if let Err(err) = inner.send(Message::Ping(Vec::new().into())).await {
++                            let _ = tx_message.send(Err(err));
++                            break;
++                        }
++                    }
+                 }
+             }
+         });
+@@ -549,7 +562,7 @@ async fn connect_websocket(
+         let _ = turn_state.set(header_value.to_string());
+     }
+     Ok((
+-        WsStream::new(stream),
++        WsStream::new(stream, WEBSOCKET_KEEPALIVE_INTERVAL),
+         response.status(),
+         reasoning_included,
+         server_model,
+@@ -1005,6 +1018,51 @@ mod tests {
+         assert!(config.extensions.permessage_deflate.is_some());
+     }
+ 
++    #[tokio::test]
++    async fn pump_task_sends_keepalive_pings() {
++        use codex_http_client::OutboundProxyPolicy;
++        use tokio::net::TcpListener;
++        use tokio_tungstenite::accept_async;
++
++        let listener = TcpListener::bind("127.0.0.1:0")
++            .await
++            .expect("bind loopback listener");
++        let addr = listener.local_addr().expect("read local addr");
++        let server = tokio::spawn(async move {
++            let (tcp, _) = listener.accept().await.expect("accept connection");
++            let mut server_ws = accept_async(tcp).await.expect("server handshake");
++            let mut pings = 0;
++            while let Some(message) = server_ws.next().await {
++                if let Message::Ping(payload) = message.expect("read client frame") {
++                    assert!(payload.is_empty());
++                    pings += 1;
++                    if pings == 2 {
++                        return pings;
++                    }
++                    server_ws.flush().await.expect("flush automatic pong");
++                }
++            }
++            pings
++        });
++
++        let request = format!("ws://{addr}")
++            .into_client_request()
++            .expect("build loopback request");
++        let factory = HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault);
++        let connector = WebSocketConnector::new(&factory).expect("create connector");
++        let (client_stream, _) = connector
++            .connect_loopback_direct(request, WebSocketConfig::default())
++            .await
++            .expect("client handshake");
++        // Hold the stream while the idle pump emits more than one keepalive.
++        let _ws_stream = WsStream::new(client_stream, Duration::from_millis(50));
++        let pings = tokio::time::timeout(Duration::from_secs(5), server)
++            .await
++            .expect("timed out waiting for keepalive pings")
++            .expect("server task panicked");
++        assert_eq!(pings, 2);
++    }
++
+     #[test]
+     fn parse_wrapped_websocket_error_event_maps_to_transport_http() {
+         let payload = json!({

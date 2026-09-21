@@ -1,0 +1,10 @@
+{
+  "upstream_repository": "openai/codex",
+  "upstream_tag": "rust-v0.155.1",
+  "upstream_sha": "be2951ea34f0d295ed0becf97079f92fa5f6950e",
+  "original_commit_url": "https://github.com/tolgaergin/codex/commit/320a3c032f5abfefdbc8b6c78321aaae08250bd8",
+  "issue_comment_url": "https://github.com/openai/codex/issues/28295#issuecomment-4713213667",
+  "patch_sha256": "edf2616cf390d296127d9986f02664c743df18ebc337155d53a9be48e983a09e",
+  "patch_revision": 1,
+  "normalized_lock_sha256": "df88a71b82843c6f092610fb07589f7a40032ddc25f50718354546ca541eb9b7"
+}

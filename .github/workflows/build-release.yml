@@ -1,0 +1,214 @@
+name: Build patched Codex
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - '.github/workflows/build-release.yml'
+      - 'source.json'
+      - 'patches/**'
+      - 'scripts/**'
+      - 'tests/**'
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: Platforms to build
+        type: choice
+        default: linux-and-apple-silicon
+        options:
+          - linux-and-apple-silicon
+          - linux-x64
+          - linux-arm64
+          - macos-arm64
+          - macos-x64
+          - windows-x64
+          - all
+      publish:
+        description: Publish a GitHub Release after all checks pass
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codex-keepalive-release
+  cancel-in-progress: false
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  CARGO_INCREMENTAL: '0'
+  CARGO_BUILD_JOBS: '2'
+  CARGO_PROFILE_RELEASE_DEBUG: '0'
+  # Keep linking within standard hosted-runner memory, including Apple Silicon.
+  CARGO_PROFILE_RELEASE_LTO: 'false'
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      tag: ${{ steps.source.outputs.tag }}
+      matrix: ${{ steps.source.outputs.matrix }}
+      targets: ${{ steps.source.outputs.targets }}
+      version: ${{ steps.source.outputs.version }}
+    steps:
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - id: source
+        env:
+          SELECTED_TARGETS: ${{ inputs.targets || 'linux-and-apple-silicon' }}
+        run: python scripts/resolve.py
+      - run: python -m unittest discover -s tests -v
+
+  test:
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CODEX_REPO_ROOT: ${{ github.workspace }}
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: openai/codex
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: .keepalive-ci
+          persist-credentials: false
+      - name: Apply the pinned, reviewed patch
+        run: python .keepalive-ci/scripts/prepare.py .
+      - name: Install native test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev cmake clang
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+        with:
+          components: rustfmt
+      - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
+        with:
+          tool: just@1.51.0,cargo-nextest@0.9.145
+      - name: Check Rust formatting
+        working-directory: codex-rs
+        run: cargo fmt -- --config imports_granularity=Item --check
+      - name: Run keepalive regression (zero matching tests is an error)
+        working-directory: codex-rs
+        run: just test --locked -p codex-api -E 'test(pump_task_sends_keepalive_pings)'
+      - name: Run codex-api tests
+        working-directory: codex-rs
+        run: just test --locked -p codex-api
+
+  build:
+    needs: [resolve, test]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+    env:
+      CODEX_REPO_ROOT: ${{ github.workspace }}
+      TARGET: ${{ matrix.target }}
+      PACKAGE_VERSION: ${{ needs.resolve.outputs.version }}
+      BUILDER_SHA: ${{ github.sha }}
+      BUILD_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      AWS_LC_SYS_NO_JITTER_ENTROPY: '1'
+    steps:
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+      - name: Enable long paths on Windows
+        if: runner.os == 'Windows'
+        run: |
+          git config --global core.longpaths true
+          git config --global core.autocrlf false
+      - name: Free space on disposable Linux build runners
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h .
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: openai/codex
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: .keepalive-ci
+          persist-credentials: false
+      - run: python .keepalive-ci/scripts/prepare.py . --metadata patch-metadata.json
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+        with:
+          targets: ${{ matrix.target }}
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock') }}
+      - name: Install Zig for musl native dependencies
+        if: runner.os == 'Linux'
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.14.0
+          use-cache: false
+      - name: Install upstream musl build tools
+        if: runner.os == 'Linux'
+        run: bash .github/scripts/install-musl-build-tools.sh
+      - name: Configure MSVC
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/setup-msvc-env
+        with:
+          target: ${{ matrix.target }}
+      - name: Download and checksum upstream V8 build artifacts
+        uses: ./.github/actions/setup-rusty-v8
+        with:
+          target: ${{ matrix.target }}
+      - name: Build, package and smoke-test
+        run: bash .keepalive-ci/scripts/build.sh
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: package-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  release:
+    if: github.event_name == 'push' || inputs.publish
+    needs: [resolve, test, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PACKAGE_VERSION: ${{ needs.resolve.outputs.version }}
+      EXPECTED_TARGETS: ${{ needs.resolve.outputs.targets }}
+    steps:
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: package-*
+          merge-multiple: true
+          path: dist
+      - name: Verify artifacts and publish Release
+        run: python scripts/release.py
