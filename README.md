@@ -2,6 +2,8 @@
 
 将 [tolgaergin 在 issue #28295 中提供的修复](https://github.com/openai/codex/issues/28295#issuecomment-4713213667) 移植到 Codex **0.155.1**，用 GitHub Actions 测试、编译并发布非官方 GitHub Release。
 
+已在本仓库完成首次双平台构建和发布：**[下载 Linux x64 / Apple Silicon 安装包](https://github.com/arusuki/codex-wsfix/releases/tag/codex-v0.155.1-keepalive.1-build.35551943899.1)**。完整解压后运行 `bin/codex`，保留同级资源目录。[Actions 运行记录](https://github.com/arusuki/codex-wsfix/actions/runs/35551943899)和[验证记录](VALIDATION.md)均已更新。后续重建可直接使用下面的 Run workflow，无需重新部署仓库。
+
 ## 修复内容
 
 Responses WebSocket 的 pump 每 30 秒主动发送一个空 Ping，延迟首次触发并跳过错过的 tick；发送失败通过现有错误通道报告。它针对安静连接被中间代理断开的情况，不保证解决所有重连原因，也不把评论中的具体 CDN 超时推断当作已验证事实。

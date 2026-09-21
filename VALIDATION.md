@@ -17,8 +17,19 @@
 
 本地 Rust 验证使用 Rust 1.95.0、cargo-nextest 0.9.145、just 1.51.0。当前容器缺少 pkg-config，实际测试使用已有 OpenSSL 的 include/library 路径；GitHub workflow 会显式安装原生测试依赖。
 
-## 尚未完成
+## GitHub Actions 与实际发布
 
-尚未提交到用户的 GitHub 目标仓库，也未触发远程 workflow。因此 Linux / Apple Silicon 等平台的完整 CLI release 编译、安装包冒烟检查和 GitHub Release 发布尚未执行，不能把这个项目包当作已编译的 Codex 安装包。
+已部署到 `arusuki/codex-wsfix`。[首次完整运行](https://github.com/arusuki/codex-wsfix/actions/runs/35551943899) 的 resolve、test、Linux build、Apple Silicon build 和 release 五个任务全部成功。
 
-默认发布矩阵已配置为 **Linux x64 + Apple Silicon**。仓库就绪后，推送到 `main` / `master` 会启动构建，只有 Rust 测试、全部平台编译、包检查及附件校验全部通过才会公开 Release。
+- 构建控制脚本测试：8 passed；keepalive 定向回归：1 passed；`codex-api`：182 passed，0 skipped；Rust 格式检查通过。
+- Linux x64：`x86_64-unknown-linux-musl`，release 编译、完整安装包 `--version` / `--help` 冒烟检查和附件上传成功。
+- Apple Silicon：`aarch64-apple-darwin`，在 `macos-15` 原生 runner 上完成相同检查并成功上传。
+- 发布任务验证了所有所选平台的完整附件和 SHA-256，已将 draft 公开为 [Codex 0.155.1-keepalive.1](https://github.com/arusuki/codex-wsfix/releases/tag/codex-v0.155.1-keepalive.1-build.35551943899.1)。Release 包含两个安装包、两个独立校验文件、两个构建信息文件和 `SHA256SUMS`。
+- CI 源码提交：`06c8ad07541252501102a05a6f954da859a724c0`。Release 产物的 GitHub SHA-256 摘要如下。
+
+| 平台 | SHA-256 |
+|---|---|
+| Apple Silicon | `360b26b82896e1495b64d481c8c112cb1bad74eb60a135b8e0bc66b8320b2048` |
+| Linux x64 | `3433fd678c2dc0eeada8cfa6c907df994f1b665bdb1b34c1a6626c02cdbcb50c` |
+
+其他可选平台尚未运行。测试确认补丁会发送保活 Ping，但未在用户实际网络中验证重连症状是否消失。
