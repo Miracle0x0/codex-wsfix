@@ -38,8 +38,9 @@ subprocess.run(args, check=True)
 for name in ("LICENSE", "NOTICE"):
     if (ROOT / name).is_file():
         shutil.copy2(ROOT / name, package / name)
-shutil.copy2(ROOT / ".keepalive-ci/patches/keepalive.patch", package / "keepalive.patch")
 metadata = json.loads((ROOT / "patch-metadata.json").read_text())
+for name in metadata["patches"]:
+    shutil.copy2(ROOT / ".keepalive-ci" / name, package / Path(name).name)
 metadata.update({
     "target": target, "package_version": version,
     "builder_sha": os.environ.get("BUILDER_SHA"),

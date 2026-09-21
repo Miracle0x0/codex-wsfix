@@ -75,6 +75,10 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: '0'
       CARGO_PROFILE_TEST_DEBUG: '0'
     steps:
+      - name: Free space on disposable Linux test runner
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h .
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.12'
@@ -87,7 +91,7 @@ jobs:
         with:
           path: .keepalive-ci
           persist-credentials: false
-      - name: Apply the pinned, reviewed patch
+      - name: Apply the pinned, reviewed patches
         run: python .keepalive-ci/scripts/prepare.py .
       - name: Install native test dependencies
         run: |
@@ -108,6 +112,24 @@ jobs:
       - name: Run codex-api tests
         working-directory: codex-rs
         run: just test --locked -p codex-api
+      - name: Verify generated config schema
+        working-directory: codex-rs
+        run: |
+          cp core/config.schema.json "$RUNNER_TEMP/config.schema.json"
+          just write-config-schema
+          cmp core/config.schema.json "$RUNNER_TEMP/config.schema.json"
+      - name: Run config tests
+        working-directory: codex-rs
+        run: just test --locked -p codex-config
+      - name: Build CLI for transport regression
+        working-directory: codex-rs
+        run: cargo build --locked --bin codex
+      - name: Run OpenAI config regressions
+        working-directory: codex-rs
+        run: just test --locked -p codex-core --lib -E 'test(openai_transport)'
+      - name: Run OpenAI transport regressions
+        working-directory: codex-rs
+        run: just test --locked -p codex-core --test all -E 'test(openai_transport_connect_timeout_from_config_file) | test(responses_mode_stream_cli_disables_openai_websockets_from_config_file)'
 
   build:
     needs: [resolve, test]

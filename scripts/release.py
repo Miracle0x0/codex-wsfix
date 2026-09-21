@@ -41,13 +41,20 @@ if __name__ == "__main__":
     checksums.write_text("".join(path.read_text() for path in assets if path.suffix == ".sha256"))
     assets.append(checksums)
     notes = Path("release-notes.md")
+    patch_checksums = "".join(
+        f"- `{name}`: `{digest}`\n" for name, digest in info["patches"].items()
+    )
     notes.write_text(
-        f"Unofficial Codex {version} with 30-second Responses WebSocket keepalive pings.\n\n"
+        f"Unofficial Codex {version} with 30-second Responses WebSocket keepalive pings "
+        "and configurable built-in OpenAI WebSocket support and connect timeout.\n\n"
         f"Upstream: `{info['upstream_tag']}` / `{info['upstream_sha']}`\n\n"
         f"Original fix: {info['original_commit_url']}\n\n"
-        f"Patch SHA-256: `{info['patch_sha256']}`\n\n"
+        f"Patch SHA-256:\n\n{patch_checksums}\n"
         f"Build: {info['run_url']}\n\n"
-        "The codex-api test suite, keepalive regression, and packaged CLI smoke checks must pass before publication.\n\n"
+        "The codex-api and codex-config suites, keepalive and OpenAI transport regressions, "
+        "config schema check, and packaged CLI smoke checks must pass before publication.\n\n"
+        "Optional top-level config.toml settings (omitted values retain upstream defaults):\n\n"
+        "```toml\nopenai_supports_websockets = false\nopenai_websocket_connect_timeout_ms = 5000\n```\n\n"
         "Extract the entire archive and run `bin/codex` (`bin/codex.exe` on Windows). "
         "Keep `codex-resources`, `codex-path`, and `codex-package.json` alongside `bin`. "
         "Do not copy only the executable.\n\n"

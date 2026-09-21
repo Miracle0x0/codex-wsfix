@@ -8,6 +8,8 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+SOURCE_FILE = "codex-rs/codex-api/src/endpoint/responses_websocket.rs"
+NEW_SOURCE_FILE = "codex-rs/core/src/config/openai_transport_tests.rs"
 
 
 def load_script(name):
@@ -29,7 +31,7 @@ class PatchTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.source = self.root / "source"
         self.source.mkdir()
-        self.file = self.source / prepare.SOURCE_FILE
+        self.file = self.source / SOURCE_FILE
         self.file.parent.mkdir(parents=True)
         self.file.write_text("before\n")
         (self.source / "codex-rs/Cargo.toml").write_text(
@@ -56,13 +58,22 @@ class PatchTests(unittest.TestCase):
         (self.root / "patches").mkdir()
         self.patch = self.root / "patches/keepalive.patch"
         self.patch.write_text(
-            f"--- a/{prepare.SOURCE_FILE}\n+++ b/{prepare.SOURCE_FILE}\n"
+            f"--- a/{SOURCE_FILE}\n+++ b/{SOURCE_FILE}\n"
             "@@ -1 +1 @@\n-before\n+after\n"
+        )
+        self.transport_patch = self.root / "patches/openai-transport.patch"
+        self.transport_patch.write_text(
+            f"--- /dev/null\n+++ b/{NEW_SOURCE_FILE}\n"
+            "@@ -0,0 +1 @@\n+transport regression fixture\n"
         )
         self.config = self.root / "source.json"
         self.config.write_text(json.dumps({
             "upstream_sha": self.sha, "upstream_tag": "rust-v0.155.1",
-            "patch_sha256": hashlib.sha256(self.patch.read_bytes()).hexdigest(),
+            "patches": {
+                "patches/keepalive.patch": hashlib.sha256(self.patch.read_bytes()).hexdigest(),
+                "patches/openai-transport.patch": hashlib.sha256(self.transport_patch.read_bytes()).hexdigest(),
+            },
+            "patched_files": [SOURCE_FILE, NEW_SOURCE_FILE],
             "normalized_lock_sha256": hashlib.sha256(normalized_lock.encode()).hexdigest(),
         }))
         self.root_patch = patch.object(prepare, "ROOT", self.root)
@@ -72,6 +83,11 @@ class PatchTests(unittest.TestCase):
     def test_applies_only_to_clean_pinned_source_and_rejects_repeat(self):
         result = prepare.prepare(self.source, self.config)
         self.assertEqual(self.file.read_text(), "after\n")
+        self.assertEqual((self.source / NEW_SOURCE_FILE).read_text(), "transport regression fixture\n")
+        self.assertEqual(result["patched_source_sha256"], {
+            name: hashlib.sha256((self.source / name).read_bytes()).hexdigest()
+            for name in [SOURCE_FILE, NEW_SOURCE_FILE]
+        })
         self.assertEqual(result["upstream_sha"], self.sha)
         self.assertIn('name = "external"\nversion = "0.0.0"',
                       (self.source / "codex-rs/Cargo.lock").read_text())
@@ -79,10 +95,32 @@ class PatchTests(unittest.TestCase):
             prepare.prepare(self.source, self.config)
 
     def test_rejects_tampered_patch_before_writing(self):
-        self.patch.write_text(self.patch.read_text() + "tampered\n")
-        with self.assertRaisesRegex(RuntimeError, "checksum mismatch"):
+        for patch_file in [self.patch, self.transport_patch]:
+            with self.subTest(patch=patch_file.name):
+                original = patch_file.read_text()
+                patch_file.write_text(original + "tampered\n")
+                with self.assertRaisesRegex(RuntimeError, "checksum mismatch"):
+                    prepare.prepare(self.source, self.config)
+                self.assertEqual(self.file.read_text(), "before\n")
+                patch_file.write_text(original)
+
+    def test_second_patch_conflict_does_not_apply_first_patch(self):
+        existing = self.source / NEW_SOURCE_FILE
+        existing.parent.mkdir(parents=True)
+        existing.write_text("existing work\n")
+        original_lock = (self.source / "codex-rs/Cargo.lock").read_bytes()
+        with self.assertRaises(subprocess.CalledProcessError):
             prepare.prepare(self.source, self.config)
         self.assertEqual(self.file.read_text(), "before\n")
+        self.assertEqual(existing.read_text(), "existing work\n")
+        self.assertEqual((self.source / "codex-rs/Cargo.lock").read_bytes(), original_lock)
+
+    def test_preserves_existing_untracked_builder_files(self):
+        builder = self.source / ".keepalive-ci"
+        builder.mkdir()
+        (builder / "source.json").write_text("builder fixture\n")
+        prepare.prepare(self.source, self.config)
+        self.assertEqual((builder / "source.json").read_text(), "builder fixture\n")
 
     def test_rejects_wrong_source_before_writing(self):
         config = json.loads(self.config.read_text())

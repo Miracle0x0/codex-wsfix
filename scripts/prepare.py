@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply a reviewed patch to the exact source revision recorded in source.json."""
+"""Apply reviewed patches to the exact source revision recorded in source.json."""
 
 import argparse
 import hashlib
@@ -10,7 +10,6 @@ import subprocess
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_FILE = "codex-rs/codex-api/src/endpoint/responses_websocket.rs"
 
 
 def normalize_release_lockfile(source: Path, expected_digest: str) -> None:
@@ -44,10 +43,10 @@ def normalize_release_lockfile(source: Path, expected_digest: str) -> None:
 
 def prepare(source: Path, config_path: Path = ROOT / "source.json") -> dict:
     config = json.loads(config_path.read_text())
-    patch = ROOT / "patches/keepalive.patch"
-    digest = hashlib.sha256(patch.read_bytes()).hexdigest()
-    if digest != config["patch_sha256"]:
-        raise RuntimeError("Patch checksum mismatch; review the patch and source.json together")
+    patches = [ROOT / name for name in config["patches"]]
+    for name, expected_digest in config["patches"].items():
+        if hashlib.sha256((ROOT / name).read_bytes()).hexdigest() != expected_digest:
+            raise RuntimeError(f"Patch checksum mismatch: {name}; review it with source.json")
     head = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=source, text=True
     ).strip()
@@ -58,18 +57,26 @@ def prepare(source: Path, config_path: Path = ROOT / "source.json") -> dict:
     )
     if dirty:
         raise RuntimeError("Upstream tracked files must be clean before patching")
-    subprocess.run(["git", "apply", "--check", str(patch)], cwd=source, check=True)
+    untracked_before = set(subprocess.check_output(
+        ["git", "ls-files", "--others", "--exclude-standard"], cwd=source, text=True
+    ).splitlines())
+    subprocess.run(["git", "apply", "--check", *map(str, patches)], cwd=source, check=True)
     normalize_release_lockfile(source, config["normalized_lock_sha256"])
-    subprocess.run(["git", "apply", str(patch)], cwd=source, check=True)
-    changed = subprocess.check_output(
+    subprocess.run(["git", "apply", *map(str, patches)], cwd=source, check=True)
+    changed = set(subprocess.check_output(
         ["git", "diff", "--name-only"], cwd=source, text=True
-    ).splitlines()
-    if changed != ["codex-rs/Cargo.lock", SOURCE_FILE]:
-        raise RuntimeError(f"Unexpected modified files: {changed}")
+    ).splitlines())
+    untracked_after = set(subprocess.check_output(
+        ["git", "ls-files", "--others", "--exclude-standard"], cwd=source, text=True
+    ).splitlines())
+    changed.update(untracked_after - untracked_before)
+    if changed != {"codex-rs/Cargo.lock", *config["patched_files"]}:
+        raise RuntimeError(f"Unexpected modified files: {sorted(changed)}")
     subprocess.run(["git", "diff", "--check"], cwd=source, check=True)
-    config["patched_source_sha256"] = hashlib.sha256(
-        (source / SOURCE_FILE).read_bytes()
-    ).hexdigest()
+    config["patched_source_sha256"] = {
+        name: hashlib.sha256((source / name).read_bytes()).hexdigest()
+        for name in config["patched_files"]
+    }
     return config
 
 
@@ -81,4 +88,4 @@ if __name__ == "__main__":
     result = prepare(args.source.resolve())
     if args.metadata:
         args.metadata.write_text(json.dumps(result, indent=2) + "\n")
-    print(f"Applied keepalive patch to {result['upstream_tag']} ({result['upstream_sha']})")
+    print(f"Applied {len(result['patches'])} patches to {result['upstream_tag']} ({result['upstream_sha']})")

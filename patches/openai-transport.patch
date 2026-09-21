@@ -1,0 +1,373 @@
+diff --git a/codex-rs/config/src/config_toml.rs b/codex-rs/config/src/config_toml.rs
+index 7bf9814..2491e64 100644
+--- a/codex-rs/config/src/config_toml.rs
++++ b/codex-rs/config/src/config_toml.rs
+@@ -400,6 +400,12 @@ pub struct ConfigToml {
+     /// Base URL override for the built-in `openai` model provider.
+     pub openai_base_url: Option<String>,
+ 
++    /// Override Responses API WebSocket support for the built-in `openai` provider.
++    pub openai_supports_websockets: Option<bool>,
++
++    /// Override the WebSocket connect timeout in milliseconds for the built-in `openai` provider.
++    pub openai_websocket_connect_timeout_ms: Option<u64>,
++
+     /// Machine-local realtime audio device preferences used by realtime voice.
+     #[serde(default)]
+     pub audio: Option<RealtimeAudioToml>,
+diff --git a/codex-rs/config/src/loader/mod.rs b/codex-rs/config/src/loader/mod.rs
+index 82dbcc3..c83fde7 100644
+--- a/codex-rs/config/src/loader/mod.rs
++++ b/codex-rs/config/src/loader/mod.rs
+@@ -77,6 +77,8 @@ const DEFAULT_PROGRAM_DATA_DIR_WINDOWS: &str = r"C:\ProgramData";
+ // config layers.
+ const PROJECT_LOCAL_CONFIG_DENYLIST: &[&str] = &[
+     "openai_base_url",
++    "openai_supports_websockets",
++    "openai_websocket_connect_timeout_ms",
+     "chatgpt_base_url",
+     "apps_mcp_product_sku",
+     "responses_api_metadata",
+diff --git a/codex-rs/config/src/loader/tests.rs b/codex-rs/config/src/loader/tests.rs
+index 77c32f3..ff853b9 100644
+--- a/codex-rs/config/src/loader/tests.rs
++++ b/codex-rs/config/src/loader/tests.rs
+@@ -20,6 +20,31 @@ use tempfile::tempdir;
+ 
+ pub(super) struct TestFileSystem;
+ 
++#[test]
++fn project_config_cannot_override_openai_transport() {
++    let mut config: TomlValue = toml::from_str(
++        "model = 'project-model'\n\
++         openai_supports_websockets = false\n\
++         openai_websocket_connect_timeout_ms = 5000",
++    )
++    .expect("valid project config");
++
++    let ignored =
++        sanitize_project_config(&mut config, CredentialBrokerProjectState::Unconfigured, &[]);
++
++    assert_eq!(
++        ignored,
++        [
++            "openai_supports_websockets",
++            "openai_websocket_connect_timeout_ms",
++        ]
++    );
++    assert_eq!(
++        config,
++        toml::from_str::<TomlValue>("model = 'project-model'").expect("valid expected config")
++    );
++}
++
+ #[test]
+ fn project_config_cannot_override_configured_credential_broker_hosts() {
+     let mut config: TomlValue = toml::from_str(
+diff --git a/codex-rs/core/config.schema.json b/codex-rs/core/config.schema.json
+index 3507239..9a44db4 100644
+--- a/codex-rs/core/config.schema.json
++++ b/codex-rs/core/config.schema.json
+@@ -6865,6 +6865,16 @@
+       "description": "Base URL override for the built-in `openai` model provider.",
+       "type": "string"
+     },
++    "openai_supports_websockets": {
++      "description": "Override Responses API WebSocket support for the built-in `openai` provider.",
++      "type": "boolean"
++    },
++    "openai_websocket_connect_timeout_ms": {
++      "description": "Override the WebSocket connect timeout in milliseconds for the built-in `openai` provider.",
++      "format": "uint64",
++      "minimum": 0.0,
++      "type": "integer"
++    },
+     "orchestrator": {
+       "allOf": [
+         {
+diff --git a/codex-rs/core/src/config/mod.rs b/codex-rs/core/src/config/mod.rs
+index ffbda1e..ee3958c 100644
+--- a/codex-rs/core/src/config/mod.rs
++++ b/codex-rs/core/src/config/mod.rs
+@@ -3742,5 +3742,14 @@ impl Config {
+ 
+-        let model_providers =
+-            merge_configured_model_providers(built_in_model_providers(openai_base_url), cfg.model_providers)
+-                .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidData, message))?;
++        let mut model_providers = built_in_model_providers(openai_base_url);
++        let openai = model_providers
++            .get_mut(codex_model_provider_info::OPENAI_PROVIDER_ID)
++            .expect("built-in OpenAI provider must exist");
++        if let Some(enabled) = cfg.openai_supports_websockets {
++            openai.supports_websockets = enabled;
++        }
++        if let Some(timeout_ms) = cfg.openai_websocket_connect_timeout_ms {
++            openai.websocket_connect_timeout_ms = Some(timeout_ms);
++        }
++        let model_providers = merge_configured_model_providers(model_providers, cfg.model_providers)
++            .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidData, message))?;
+ 
+@@ -4831 +4840,5 @@ mod tests;
+ mod config_loader_tests;
++
++#[cfg(test)]
++#[path = "openai_transport_tests.rs"]
++mod openai_transport_tests;
+diff --git a/codex-rs/core/src/config/openai_transport_tests.rs b/codex-rs/core/src/config/openai_transport_tests.rs
+new file mode 100644
+index 0000000..d342da5
+--- /dev/null
++++ b/codex-rs/core/src/config/openai_transport_tests.rs
+@@ -0,0 +1,127 @@
++use super::ConfigBuilder;
++use codex_config::LoaderOverrides;
++use codex_config::config_toml::ConfigToml;
++use codex_model_provider_info::ModelProviderInfo;
++use pretty_assertions::assert_eq;
++use tempfile::TempDir;
++
++#[tokio::test]
++async fn openai_transport_overrides_preserve_other_provider_fields() -> anyhow::Result<()> {
++    for (settings, websocket_override, timeout_override) in [
++        ("", None, None),
++        ("openai_supports_websockets = false", Some(false), None),
++        ("openai_supports_websockets = true", Some(true), None),
++        (
++            "openai_websocket_connect_timeout_ms = 5000",
++            None,
++            Some(5000),
++        ),
++        ("openai_websocket_connect_timeout_ms = 0", None, Some(0)),
++        (
++            "openai_supports_websockets = true\nopenai_websocket_connect_timeout_ms = 9000",
++            Some(true),
++            Some(9000),
++        ),
++        (
++            "openai_supports_websockets = false\nopenai_websocket_connect_timeout_ms = 7000",
++            Some(false),
++            Some(7000),
++        ),
++    ] {
++        let codex_home = TempDir::new()?;
++        let base_url = "https://openai.example.test/v1";
++        std::fs::write(
++            codex_home.path().join("config.toml"),
++            format!("openai_base_url = '{base_url}'\n{settings}"),
++        )?;
++        let config = ConfigBuilder::default()
++            .codex_home(codex_home.path().to_path_buf())
++            .fallback_cwd(Some(codex_home.path().to_path_buf()))
++            .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
++            .build()
++            .await?;
++        let mut expected = ModelProviderInfo::create_openai_provider(Some(base_url.to_string()));
++        if let Some(enabled) = websocket_override {
++            expected.supports_websockets = enabled;
++        }
++        if let Some(timeout_ms) = timeout_override {
++            expected.websocket_connect_timeout_ms = Some(timeout_ms);
++        }
++
++        assert_eq!(config.model_provider_id, "openai");
++        assert_eq!(config.model_provider, expected);
++        assert_eq!(config.model_providers["openai"], expected);
++        if let Some(timeout_ms) = timeout_override {
++            assert_eq!(
++                config.model_provider.websocket_connect_timeout(),
++                std::time::Duration::from_millis(timeout_ms),
++            );
++        }
++    }
++    Ok(())
++}
++
++#[tokio::test]
++async fn openai_transport_overrides_do_not_change_selected_custom_provider() -> anyhow::Result<()> {
++    let codex_home = TempDir::new()?;
++    let cfg: ConfigToml = toml::from_str(
++        r#"
++model_provider = "custom"
++openai_supports_websockets = false
++openai_websocket_connect_timeout_ms = 5000
++
++[model_providers.custom]
++name = "Custom"
++base_url = "https://custom.example.test/v1"
++supports_websockets = true
++websocket_connect_timeout_ms = 9000
++"#,
++    )?;
++    let expected = cfg.model_providers["custom"].clone();
++    std::fs::write(
++        codex_home.path().join("config.toml"),
++        toml::to_string(&cfg)?,
++    )?;
++    let config = ConfigBuilder::default()
++        .codex_home(codex_home.path().to_path_buf())
++        .fallback_cwd(Some(codex_home.path().to_path_buf()))
++        .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
++        .build()
++        .await?;
++
++    assert_eq!(config.model_provider_id, "custom");
++    assert_eq!(config.model_provider, expected);
++    assert_eq!(config.model_providers["custom"], expected);
++    Ok(())
++}
++
++#[tokio::test]
++async fn openai_transport_cli_overrides_take_precedence_over_config_file() -> anyhow::Result<()> {
++    let codex_home = TempDir::new()?;
++    std::fs::write(
++        codex_home.path().join("config.toml"),
++        "openai_supports_websockets = false\nopenai_websocket_connect_timeout_ms = 5000",
++    )?;
++    let config = ConfigBuilder::default()
++        .codex_home(codex_home.path().to_path_buf())
++        .fallback_cwd(Some(codex_home.path().to_path_buf()))
++        .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
++        .cli_overrides(vec![
++            (
++                "openai_supports_websockets".to_string(),
++                toml::Value::Boolean(true),
++            ),
++            (
++                "openai_websocket_connect_timeout_ms".to_string(),
++                toml::Value::Integer(7000),
++            ),
++        ])
++        .build()
++        .await?;
++    let mut expected = ModelProviderInfo::create_openai_provider(/*base_url*/ None);
++    expected.supports_websockets = true;
++    expected.websocket_connect_timeout_ms = Some(7000);
++    assert_eq!(config.model_provider, expected);
++    assert_eq!(config.model_providers["openai"], expected);
++    Ok(())
++}
+diff --git a/codex-rs/core/tests/suite/cli_stream.rs b/codex-rs/core/tests/suite/cli_stream.rs
+index 715da9d..1bb6918 100644
+--- a/codex-rs/core/tests/suite/cli_stream.rs
++++ b/codex-rs/core/tests/suite/cli_stream.rs
+@@ -289,6 +289,53 @@ async fn responses_mode_stream_cli_supports_openai_base_url_config_override() {
+     assert_eq!(request.path(), "/v1/responses");
+ }
+ 
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn responses_mode_stream_cli_disables_openai_websockets_from_config_file() {
++    skip_if_no_network!();
++
++    let server = MockServer::start().await;
++    let resp_mock = responses::mount_sse_once(&server, cli_sse_response()).await;
++    let home = TempDir::new().unwrap();
++    let base_url = format!("{}/v1", server.uri());
++    std::fs::write(
++        home.path().join("config.toml"),
++        format!(
++            "openai_base_url = '{base_url}'\n\
++             openai_supports_websockets = false\n\
++             openai_websocket_connect_timeout_ms = 5000\n"
++        ),
++    )
++    .unwrap();
++
++    let bin = codex_utils_cargo_bin::cargo_bin("codex").unwrap();
++    let mut cmd = Command::new(bin);
++    cmd.arg("exec")
++        .arg("--skip-git-repo-check")
++        .arg("-C")
++        .arg(repo_root())
++        .arg("hello?");
++    cmd.env("CODEX_HOME", home.path())
++        .env("OPENAI_API_KEY", "dummy")
++        .env(CODEX_API_KEY_ENV_VAR, "dummy")
++        .env_remove(CODEX_ACCESS_TOKEN_ENV_VAR);
++
++    let output = run_cli_command(&mut cmd).unwrap();
++    assert!(
++        output.status.success(),
++        "codex exec failed: {}",
++        String::from_utf8_lossy(&output.stderr)
++    );
++    assert_eq!(resp_mock.single_request().path(), "/v1/responses");
++    let websocket_upgrades = server
++        .received_requests()
++        .await
++        .unwrap()
++        .into_iter()
++        .filter(|request| request.headers.contains_key("upgrade"))
++        .count();
++    assert_eq!(websocket_upgrades, 0);
++}
++
+ /// Verify that passing `-c model_instructions_file=...` to the CLI
+ /// overrides the built-in base instructions by inspecting the request body
+ /// received by a mock OpenAI Responses endpoint.
+diff --git a/codex-rs/core/tests/suite/client_websockets.rs b/codex-rs/core/tests/suite/client_websockets.rs
+index 4d2ba3c..4c94c8a 100755
+--- a/codex-rs/core/tests/suite/client_websockets.rs
++++ b/codex-rs/core/tests/suite/client_websockets.rs
+@@ -581,6 +581,62 @@ async fn responses_websocket_preconnect_does_not_replace_turn_trace_payload() {
+     server.shutdown().await;
+ }
+ 
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn openai_transport_connect_timeout_from_config_file() {
++    skip_if_no_network!();
++
++    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let address = listener.local_addr().unwrap();
++    let codex_home = TempDir::new().unwrap();
++    std::fs::write(
++        codex_home.path().join("config.toml"),
++        format!(
++            "openai_base_url = 'http://{address}/v1'\n\
++             openai_websocket_connect_timeout_ms = 100"
++        ),
++    )
++    .unwrap();
++    let config = codex_core::config::ConfigBuilder::default()
++        .codex_home(codex_home.path().to_path_buf())
++        .fallback_cwd(Some(codex_home.path().to_path_buf()))
++        .loader_overrides(codex_config::LoaderOverrides::without_managed_config_for_tests())
++        .build()
++        .await
++        .unwrap();
++    let harness = websocket_harness_with_provider_options_and_auth(
++        config.model_provider,
++        /*runtime_metrics_enabled*/ false,
++        /*concurrent_reasoning_summaries_enabled*/ false,
++        /*enabled_features*/ &[],
++        Some(CodexAuth::from_api_key("test-key")),
++    )
++    .await;
++    let mut session = harness.client.new_session();
++    let metadata = websocket_connection_metadata(&harness);
++    // Keep the accepted socket open without completing the WebSocket handshake.
++    let started = tokio::time::Instant::now();
++    let (result, accepted) = tokio::time::timeout(Duration::from_secs(5), async {
++        tokio::join!(
++            session.preconnect_websocket(
++                &harness.model_info,
++                &harness.session_telemetry,
++                &metadata
++            ),
++            listener.accept(),
++        )
++    })
++    .await
++    .expect("configured handshake timeout should expire within five seconds");
++    let (_socket, _) = accepted.unwrap();
++    assert!(matches!(
++        result,
++        Err(codex_api::ApiError::Transport(
++            codex_api::TransportError::Timeout
++        ))
++    ));
++    assert!(started.elapsed() >= Duration::from_millis(100));
++}
++
+ #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+ async fn responses_websocket_preconnect_reuses_connection() {
+     skip_if_no_network!();
