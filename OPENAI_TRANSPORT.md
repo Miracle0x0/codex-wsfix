@@ -1,6 +1,6 @@
 # 内置 OpenAI WebSocket 配置补丁评估
 
-结论：`rust-v0.156.0` 仍未提供内置 OpenAI 的 WebSocket 开关与建连超时配置入口，因此保留两个顶层可选配置键方案。交付补丁为 `patches/openai-transport.patch`，与 keepalive 独立应用、校验和打包，构建修订号为 `keepalive.3`。
+结论：`rust-v0.156.1` 仍未提供内置 OpenAI 的 WebSocket 开关与建连超时配置入口，因此保留两个顶层可选配置键方案。交付补丁为 `patches/openai-transport.patch`，与 keepalive 独立应用、校验和打包，构建修订号为 `keepalive.4`。
 
 ## 范围与取舍
 
@@ -14,7 +14,7 @@
 
 ## 基线与定位
 
-行号以下列未打补丁的稳定版源码为准：`fe74a774532af67b5a4a3dec03ce9469e17f89af`。升级时以符号重新定位，不依赖行号机械替换。
+行号以下列未打补丁的稳定版源码为准：`b412ff32c417f855c2b2d1581b77058eed87c84b`。升级时以符号重新定位，不依赖行号机械替换。
 
 | 文件（相对上游根目录） | 行号与定位符号 | 需要核对的语义 |
 |---|---|---|

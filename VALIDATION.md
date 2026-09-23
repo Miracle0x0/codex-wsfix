@@ -2,11 +2,19 @@
 
 验证日期：2026-09-23。
 
-上游：`openai/codex` 的 `rust-v0.156.0`，完整 commit 为 `fe74a774532af67b5a4a3dec03ce9469e17f89af`。
+上游：`openai/codex` 的 `rust-v0.156.1`，完整 commit 为 `b412ff32c417f855c2b2d1581b77058eed87c84b`。
+
+## 0.156.1-keepalive.4：上游静态复核
+
+比较 `rust-v0.156.0` 与 `rust-v0.156.1` 的完整差异：上游更新模型目录、模型选择提示及相关测试和快照，并递增 workspace 版本；两份补丁涉及的源码、schema、配置加载与传输实现均未改变。两份补丁仍有必要，内容、行号、上下文和 SHA-256 全部保持不变。
+
+`git apply --check --verbose` 无偏移通过，`prepare.py` 的固定提交、补丁哈希、锁文件哈希和修改范围校验通过。上游 `Cargo.lock` 与 0.156.0 相同，准备脚本仍仅对齐 155 个本地包的版本；对齐为 `0.156.1` 后的 SHA-256 为 `d722f05fc760bcd1f5749ec452452d81058458b788df3b765b80500d757eba4a`。
+
+本次按要求仅作源码差异与补丁应用核对，未进行本地构建、schema 生成或测试，也未运行 GitHub Actions 或发布。
 
 ## 0.156.0-keepalive.3：上游复核与补丁重定位
 
-核对固定 tag 的源码后，两份补丁均保留。`codex-api` 的 `WsStream` 只响应收到的 Ping，下层 `codex-websocket-client` 也没有主动定时保活；内置 OpenAI 仍默认启用 WebSocket、使用 15000 毫秒建连超时，配置类型没有对应覆盖入口，且 `model_providers.openai` 仍属于禁止用户定义的保留 ID。
+核对 `rust-v0.156.0`（`fe74a774532af67b5a4a3dec03ce9469e17f89af`）的源码后，两份补丁均保留。`codex-api` 的 `WsStream` 只响应收到的 Ping，下层 `codex-websocket-client` 也没有主动定时保活；内置 OpenAI 仍默认启用 WebSocket、使用 15000 毫秒建连超时，配置类型没有对应覆盖入口，且 `model_providers.openai` 仍属于禁止用户定义的保留 ID。
 
 旧补丁在 0.156.0 上均可应用，但 keepalive 点位偏移 1–17 行，配置与 schema 点位也已移动。当前补丁按新基线重新生成文件索引、行号和上下文；配置构造处恢复普通三行上下文，保留上游新增的受管理 provider 选择逻辑。逐行比较确认，两份补丁的所有增删源码行与上一修订完全一致，修改范围仍为 9 个文件。
 
