@@ -1,8 +1,8 @@
 diff --git a/codex-rs/codex-api/src/endpoint/responses_websocket.rs b/codex-rs/codex-api/src/endpoint/responses_websocket.rs
-index 95d41e0..a930340 100644
+index 48e99d0..a2364d4 100644
 --- a/codex-rs/codex-api/src/endpoint/responses_websocket.rs
 +++ b/codex-rs/codex-api/src/endpoint/responses_websocket.rs
-@@ -47,6 +47,10 @@ use tungstenite::extensions::compression::deflate::DeflateConfig;
+@@ -46,6 +46,10 @@ use tungstenite::extensions::compression::deflate::DeflateConfig;
  use tungstenite::protocol::WebSocketConfig;
  use url::Url;
  
@@ -13,7 +13,7 @@ index 95d41e0..a930340 100644
  struct WsStream {
      tx_command: mpsc::Sender<WsCommand>,
      rx_message: mpsc::UnboundedReceiver<Result<Message, WsError>>,
-@@ -61,12 +65,15 @@ enum WsCommand {
+@@ -60,12 +64,15 @@ enum WsCommand {
  }
  
  impl WsStream {
@@ -30,7 +30,7 @@ index 95d41e0..a930340 100644
              loop {
                  tokio::select! {
                      command = rx_command.recv() => {
-@@ -114,6 +121,12 @@ impl WsStream {
+@@ -113,6 +120,12 @@ impl WsStream {
                              }
                          }
                      }
@@ -43,7 +43,7 @@ index 95d41e0..a930340 100644
                  }
              }
          });
-@@ -549,7 +562,7 @@ async fn connect_websocket(
+@@ -532,7 +545,7 @@ async fn connect_websocket(
          let _ = turn_state.set(header_value.to_string());
      }
      Ok((
@@ -52,7 +52,7 @@ index 95d41e0..a930340 100644
          response.status(),
          reasoning_included,
          server_model,
-@@ -1005,6 +1018,51 @@ mod tests {
+@@ -988,6 +1001,51 @@ mod tests {
          assert!(config.extensions.permessage_deflate.is_some());
      }
  

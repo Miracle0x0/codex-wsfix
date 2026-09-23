@@ -1,8 +1,8 @@
 diff --git a/codex-rs/config/src/config_toml.rs b/codex-rs/config/src/config_toml.rs
-index 7bf9814..2491e64 100644
+index bdaee87..c363923 100644
 --- a/codex-rs/config/src/config_toml.rs
 +++ b/codex-rs/config/src/config_toml.rs
-@@ -400,6 +400,12 @@ pub struct ConfigToml {
+@@ -412,6 +412,12 @@ pub struct ConfigToml {
      /// Base URL override for the built-in `openai` model provider.
      pub openai_base_url: Option<String>,
  
@@ -16,10 +16,10 @@ index 7bf9814..2491e64 100644
      #[serde(default)]
      pub audio: Option<RealtimeAudioToml>,
 diff --git a/codex-rs/config/src/loader/mod.rs b/codex-rs/config/src/loader/mod.rs
-index 82dbcc3..c83fde7 100644
+index 8dbaad2..1773947 100644
 --- a/codex-rs/config/src/loader/mod.rs
 +++ b/codex-rs/config/src/loader/mod.rs
-@@ -77,6 +77,8 @@ const DEFAULT_PROGRAM_DATA_DIR_WINDOWS: &str = r"C:\ProgramData";
+@@ -83,6 +83,8 @@ const DEFAULT_PROGRAM_DATA_DIR_WINDOWS: &str = r"C:\ProgramData";
  // config layers.
  const PROJECT_LOCAL_CONFIG_DENYLIST: &[&str] = &[
      "openai_base_url",
@@ -29,7 +29,7 @@ index 82dbcc3..c83fde7 100644
      "apps_mcp_product_sku",
      "responses_api_metadata",
 diff --git a/codex-rs/config/src/loader/tests.rs b/codex-rs/config/src/loader/tests.rs
-index 77c32f3..ff853b9 100644
+index e1ae693..3fce3c2 100644
 --- a/codex-rs/config/src/loader/tests.rs
 +++ b/codex-rs/config/src/loader/tests.rs
 @@ -20,6 +20,31 @@ use tempfile::tempdir;
@@ -65,10 +65,10 @@ index 77c32f3..ff853b9 100644
  fn project_config_cannot_override_configured_credential_broker_hosts() {
      let mut config: TomlValue = toml::from_str(
 diff --git a/codex-rs/core/config.schema.json b/codex-rs/core/config.schema.json
-index 3507239..9a44db4 100644
+index 9dffbb2..9e12ae8 100644
 --- a/codex-rs/core/config.schema.json
 +++ b/codex-rs/core/config.schema.json
-@@ -6865,6 +6865,16 @@
+@@ -7269,6 +7269,16 @@
        "description": "Base URL override for the built-in `openai` model provider.",
        "type": "string"
      },
@@ -86,10 +86,12 @@ index 3507239..9a44db4 100644
        "allOf": [
          {
 diff --git a/codex-rs/core/src/config/mod.rs b/codex-rs/core/src/config/mod.rs
-index ffbda1e..ee3958c 100644
+index e71ad88..b698c88 100644
 --- a/codex-rs/core/src/config/mod.rs
 +++ b/codex-rs/core/src/config/mod.rs
-@@ -3742,5 +3742,14 @@ impl Config {
+@@ -3737,9 +3737,18 @@ impl Config {
+             .clone()
+             .filter(|value| !value.is_empty());
  
 -        let model_providers =
 -            merge_configured_model_providers(built_in_model_providers(openai_base_url), cfg.model_providers)
@@ -107,7 +109,11 @@ index ffbda1e..ee3958c 100644
 +        let model_providers = merge_configured_model_providers(model_providers, cfg.model_providers)
 +            .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidData, message))?;
  
-@@ -4831 +4840,5 @@ mod tests;
+         let model_provider_id = config_layer_stack.required_model_provider().map(str::to_string)
+             .or(model_provider)
+@@ -4839,3 +4848,7 @@ mod tests;
+ #[cfg(test)]
+ #[path = "config_loader_tests.rs"]
  mod config_loader_tests;
 +
 +#[cfg(test)]
@@ -305,7 +311,7 @@ index 715da9d..1bb6918 100644
  /// overrides the built-in base instructions by inspecting the request body
  /// received by a mock OpenAI Responses endpoint.
 diff --git a/codex-rs/core/tests/suite/client_websockets.rs b/codex-rs/core/tests/suite/client_websockets.rs
-index 4d2ba3c..4c94c8a 100755
+index b9a0492..000c44c 100755
 --- a/codex-rs/core/tests/suite/client_websockets.rs
 +++ b/codex-rs/core/tests/suite/client_websockets.rs
 @@ -581,6 +581,62 @@ async fn responses_websocket_preconnect_does_not_replace_turn_trace_payload() {
