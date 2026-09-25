@@ -1,6 +1,6 @@
 # 内置 OpenAI WebSocket 配置补丁评估
 
-结论：`rust-v0.156.1` 仍未提供内置 OpenAI 的 WebSocket 开关与建连超时配置入口，因此保留两个顶层可选配置键方案。交付补丁为 `patches/openai-transport.patch`，与 keepalive 独立应用、校验和打包，构建修订号为 `keepalive.4`。
+结论：`rust-v0.157.0` 仍未提供内置 OpenAI 的 WebSocket 开关与建连超时配置入口，因此保留两个顶层可选配置键方案。交付补丁为 `patches/openai-transport.patch`，与 keepalive 独立应用、校验和打包，构建修订号为 `keepalive.5`。
 
 ## 范围与取舍
 
@@ -14,16 +14,16 @@
 
 ## 基线与定位
 
-行号以下列未打补丁的稳定版源码为准：`b412ff32c417f855c2b2d1581b77058eed87c84b`。升级时以符号重新定位，不依赖行号机械替换。
+行号以下列未打补丁的稳定版源码为准：`00c972ed5d6ff6499317fd41b7f23605b8e6850d`。升级时以符号重新定位，不依赖行号机械替换。
 
 | 文件（相对上游根目录） | 行号与定位符号 | 需要核对的语义 |
 |---|---|---|
-| `codex-rs/config/src/config_toml.rs` | 413，`ConfigToml.openai_base_url` | 两个新字段仍能从普通配置层反序列化 |
-| `codex-rs/config/src/loader/mod.rs` | 84，`PROJECT_LOCAL_CONFIG_DENYLIST` | 与既有 provider 配置保持相同的来源规则 |
-| `codex-rs/core/src/config/mod.rs` | 3735，`openai_base_url` / `built_in_model_providers` | 显式覆盖发生在构造后、合并和选择前 |
-| `codex-rs/model-provider-info/src/lib.rs` | 512，`create_openai_provider`；682，`merge_configured_model_providers` | 默认定义继续由上游维护，合并不会丢弃已应用的覆盖 |
-| `codex-rs/model-provider-info/src/lib.rs` | 506，`websocket_connect_timeout` | 配置毫秒值优先，省略时使用上游默认值 |
-| `codex-rs/core/src/client.rs` | 1021，`responses_websocket_enabled`；1227，`connect_websocket` 内超时读取 | 客户端仍读取相同 provider 字段 |
+| `codex-rs/config/src/config_toml.rs` | 425，`ConfigToml.openai_base_url` | 两个新字段仍能从普通配置层反序列化 |
+| `codex-rs/config/src/loader/mod.rs` | 88，`PROJECT_LOCAL_CONFIG_DENYLIST` | 与既有 provider 配置保持相同的来源规则 |
+| `codex-rs/core/src/config/mod.rs` | 3772，`openai_base_url` / `built_in_model_providers` | 显式覆盖发生在构造后、合并和选择前 |
+| `codex-rs/model-provider-info/src/lib.rs` | 514，`create_openai_provider`；684，`merge_configured_model_providers` | 默认定义继续由上游维护，合并不会丢弃已应用的覆盖 |
+| `codex-rs/model-provider-info/src/lib.rs` | 508，`websocket_connect_timeout` | 配置毫秒值优先，省略时使用上游默认值 |
+| `codex-rs/core/src/client.rs` | 1020，`responses_websocket_enabled`；1226，`connect_websocket` 内超时读取 | 客户端仍读取相同 provider 字段 |
 
 0.156.0 新增的受管理 provider 选择逻辑仍发生在 provider 集合构造与合并之后，补丁保留其优先级。当前补丁统一使用三行上下文，并记录该稳定版的文件索引和行号。
 

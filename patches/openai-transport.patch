@@ -1,8 +1,8 @@
 diff --git a/codex-rs/config/src/config_toml.rs b/codex-rs/config/src/config_toml.rs
-index bdaee87..c363923 100644
+index e15bb84..ed83127 100644
 --- a/codex-rs/config/src/config_toml.rs
 +++ b/codex-rs/config/src/config_toml.rs
-@@ -412,6 +412,12 @@ pub struct ConfigToml {
+@@ -424,6 +424,12 @@ pub struct ConfigToml {
      /// Base URL override for the built-in `openai` model provider.
      pub openai_base_url: Option<String>,
  
@@ -16,10 +16,10 @@ index bdaee87..c363923 100644
      #[serde(default)]
      pub audio: Option<RealtimeAudioToml>,
 diff --git a/codex-rs/config/src/loader/mod.rs b/codex-rs/config/src/loader/mod.rs
-index 8dbaad2..1773947 100644
+index 615d394..b5e5776 100644
 --- a/codex-rs/config/src/loader/mod.rs
 +++ b/codex-rs/config/src/loader/mod.rs
-@@ -83,6 +83,8 @@ const DEFAULT_PROGRAM_DATA_DIR_WINDOWS: &str = r"C:\ProgramData";
+@@ -87,6 +87,8 @@ const DEFAULT_PROGRAM_DATA_DIR_WINDOWS: &str = r"C:\ProgramData";
  // config layers.
  const PROJECT_LOCAL_CONFIG_DENYLIST: &[&str] = &[
      "openai_base_url",
@@ -65,10 +65,10 @@ index e1ae693..3fce3c2 100644
  fn project_config_cannot_override_configured_credential_broker_hosts() {
      let mut config: TomlValue = toml::from_str(
 diff --git a/codex-rs/core/config.schema.json b/codex-rs/core/config.schema.json
-index 9dffbb2..9e12ae8 100644
+index c5302f1..cc5995e 100644
 --- a/codex-rs/core/config.schema.json
 +++ b/codex-rs/core/config.schema.json
-@@ -7269,6 +7269,16 @@
+@@ -7313,6 +7313,16 @@
        "description": "Base URL override for the built-in `openai` model provider.",
        "type": "string"
      },
@@ -86,10 +86,10 @@ index 9dffbb2..9e12ae8 100644
        "allOf": [
          {
 diff --git a/codex-rs/core/src/config/mod.rs b/codex-rs/core/src/config/mod.rs
-index e71ad88..b698c88 100644
+index 9078708..f0b1954 100644
 --- a/codex-rs/core/src/config/mod.rs
 +++ b/codex-rs/core/src/config/mod.rs
-@@ -3737,9 +3737,18 @@ impl Config {
+@@ -3774,9 +3774,18 @@ impl Config {
              .clone()
              .filter(|value| !value.is_empty());
  
@@ -111,7 +111,7 @@ index e71ad88..b698c88 100644
  
          let model_provider_id = config_layer_stack.required_model_provider().map(str::to_string)
              .or(model_provider)
-@@ -4839,3 +4848,7 @@ mod tests;
+@@ -4891,3 +4900,7 @@ mod tests;
  #[cfg(test)]
  #[path = "config_loader_tests.rs"]
  mod config_loader_tests;

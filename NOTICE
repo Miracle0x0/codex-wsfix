@@ -7,4 +7,4 @@ Copyright (c) 2023-2025 The Ratatui Developers
 
 The Responses WebSocket keepalive patch is derived from Tolga Ergin's commit
 320a3c032f5abfefdbc8b6c78321aaae08250bd8 in tolgaergin/codex.
-This distribution adapts the patch to Codex 0.156.1 and adds independent CI tooling.
+This distribution adapts the patch to Codex 0.157.0 and adds independent CI tooling.

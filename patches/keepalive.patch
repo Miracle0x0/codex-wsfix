@@ -1,5 +1,5 @@
 diff --git a/codex-rs/codex-api/src/endpoint/responses_websocket.rs b/codex-rs/codex-api/src/endpoint/responses_websocket.rs
-index 48e99d0..a2364d4 100644
+index 4fe0071..4a396b7 100644
 --- a/codex-rs/codex-api/src/endpoint/responses_websocket.rs
 +++ b/codex-rs/codex-api/src/endpoint/responses_websocket.rs
 @@ -46,6 +46,10 @@ use tungstenite::extensions::compression::deflate::DeflateConfig;
@@ -43,7 +43,7 @@ index 48e99d0..a2364d4 100644
                  }
              }
          });
-@@ -532,7 +545,7 @@ async fn connect_websocket(
+@@ -535,7 +548,7 @@ async fn connect_websocket(
          let _ = turn_state.set(header_value.to_string());
      }
      Ok((
@@ -52,7 +52,7 @@ index 48e99d0..a2364d4 100644
          response.status(),
          reasoning_included,
          server_model,
-@@ -988,6 +1001,51 @@ mod tests {
+@@ -999,6 +1012,51 @@ mod tests {
          assert!(config.extensions.permessage_deflate.is_some());
      }
  

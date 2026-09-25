@@ -1,14 +1,14 @@
 {
   "upstream_repository": "openai/codex",
-  "upstream_tag": "rust-v0.156.1",
-  "upstream_sha": "b412ff32c417f855c2b2d1581b77058eed87c84b",
+  "upstream_tag": "rust-v0.157.0",
+  "upstream_sha": "00c972ed5d6ff6499317fd41b7f23605b8e6850d",
   "original_commit_url": "https://github.com/tolgaergin/codex/commit/320a3c032f5abfefdbc8b6c78321aaae08250bd8",
   "issue_comment_url": "https://github.com/openai/codex/issues/28295#issuecomment-4713213667",
-  "patch_revision": 4,
-  "normalized_lock_sha256": "d722f05fc760bcd1f5749ec452452d81058458b788df3b765b80500d757eba4a",
+  "patch_revision": 5,
+  "normalized_lock_sha256": "0ca2e7967026f5cb617a295909d8e0765ce115dd690a065d2055322908416967",
   "patches": {
-    "patches/keepalive.patch": "26a136ee61fb2652b8d4952b552ce0f45dd94ade65dd2358f6233d5717622bb7",
-    "patches/openai-transport.patch": "cd3670968dc0f7e53a698fed40f87507e8b6d4b7af21701bc8b653be14a39347"
+    "patches/keepalive.patch": "3d1d0dd236bb3b6afe7f4f5339a92557877fc4493b68fb7bcfe0f60ec3c4ae5b",
+    "patches/openai-transport.patch": "a4ed232aa648c1e15d18977a3dd0fddafc38fbc2e38e542bfd30cb4de4a22769"
   },
   "patched_files": [
     "codex-rs/codex-api/src/endpoint/responses_websocket.rs",
