@@ -76,8 +76,8 @@ gh workflow run build-release.yml --repo arusuki/codex-wsfix \
 
 1. 读取固定上游 commit 和目标平台。
 2. 校验全部补丁 SHA-256、上游 SHA、工作区及 `git apply --check`，随后应用两份补丁；任一不符即停止。该官方 tag 的 Cargo.lock 中 155 个本地 workspace 包版本仍为 `0.0.0`；准备脚本仅将这些本地条目对齐到 `0.157.0`，并验证整个修正后的锁文件哈希。第三方依赖的版本、来源和校验值保持不变，后续构建和测试继续使用 `--locked`。
-3. 运行 Rust 格式检查、schema 生成一致性检查、keepalive 定向回归、`codex-api` 与 `codex-config` 测试，以及 `codex-core` 的 OpenAI 配置和传输定向回归；零匹配的回归测试同样失败。
-4. 使用上游 Rust 1.95.0、`Cargo.lock`、musl/MSVC/V8 配置构建（为普通 runner 的内存限制关闭 LTO、使用 16 个 codegen units）；V8 等预编译依赖使用上游校验机制。
+3. 测试与各平台发布构建分别缓存 Cargo 下载内容和第三方依赖编译产物，按 runner、目标平台、构建用途、Rust 编译器及编译环境区分；锁文件指纹排除本地包版本，依赖更新时可恢复相同环境的旧缓存。新缓存未精确命中时，按目标平台前缀读取已有的 `cargo-<target>-*` 下载缓存，Linux GNU 测试也可使用已有 musl 下载缓存。缓存不保存 Codex workspace 编译产物或工具安装目录，成功运行后保存新缓存。
+4. 运行 Rust 格式检查、schema 生成一致性检查、keepalive 定向回归、`codex-api` 与 `codex-config` 测试，以及 `codex-core` 的 OpenAI 配置和传输定向回归；零匹配的回归测试同样失败。使用上游 Rust 1.95.0、`Cargo.lock`、musl/MSVC/V8 配置构建（为普通 runner 的内存限制关闭 LTO、使用 16 个 codegen units）；缓存命中仍执行全部测试、构建及校验，V8 等预编译依赖使用上游校验机制。
 5. Linux 先编译并计算 bwrap 摘要，再将摘要嵌入 CLI；Windows 保留 sandbox 辅助程序。
 6. 使用上游规范打包器保留 `bin`、`codex-resources`、`codex-path` 和 `codex-package.json`，执行 `--version` / `--help` 冒烟检查。
 7. 验证所有所选平台产物和校验值，先创建 draft，全部附件上传完成后再公开。

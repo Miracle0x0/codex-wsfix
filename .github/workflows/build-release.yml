@@ -103,6 +103,25 @@ jobs:
       - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
         with:
           tool: just@1.51.0,cargo-nextest@0.9.145
+      - name: Cache Rust test dependencies
+        id: rust-cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: codex-rs -> target
+          key: ubuntu-24.04-x86_64-unknown-linux-gnu-dev
+          cache-bin: false
+          cache-workspace-crates: false
+      # Existing Linux caches contain source archives, usable by GNU and musl alike.
+      - name: Restore existing Cargo downloads
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-x86_64-unknown-linux-musl-${{ hashFiles('codex-rs/Cargo.lock') }}
+          restore-keys: cargo-x86_64-unknown-linux-musl-
       - name: Check Rust formatting
         working-directory: codex-rs
         run: cargo fmt -- --config imports_granularity=Item --check
@@ -175,13 +194,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
         with:
           targets: ${{ matrix.target }}
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: cargo-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock') }}
       - name: Install Zig for musl native dependencies
         if: runner.os == 'Linux'
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
@@ -200,6 +212,26 @@ jobs:
         uses: ./.github/actions/setup-rusty-v8
         with:
           target: ${{ matrix.target }}
+      # Compute the cache key after native tool setup has exported compiler settings.
+      - name: Cache Rust release dependencies
+        id: rust-cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: codex-rs -> target
+          key: ${{ matrix.runner }}-${{ matrix.target }}-release
+          env-vars: AWS_LC_SYS LIBSQLITE3 OPENSSL X86_64_UNKNOWN_LINUX_MUSL AARCH64_UNKNOWN_LINUX_MUSL
+          cache-bin: false
+          cache-workspace-crates: false
+      - name: Restore existing Cargo downloads
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock') }}
+          restore-keys: cargo-${{ matrix.target }}-
       - name: Build, package and smoke-test
         run: bash .keepalive-ci/scripts/build.sh
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
